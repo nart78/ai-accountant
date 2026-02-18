@@ -8,10 +8,16 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - default
+      - caddy_proxy
     depends_on:
       - backend
       - frontend
@@ -68,6 +74,11 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+
+networks:
+  default:
+  caddy_proxy:
+    external: true
 
 volumes:
   postgres_data:
