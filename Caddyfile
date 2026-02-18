@@ -1,24 +1,43 @@
-# Replace yourdomain.com with your actual domain
-# Caddy automatically gets and renews SSL from Let's Encrypt
-
-yourdomain.com {
-    # Proxy API requests to the backend
-    handle /api/* {
-        reverse_proxy backend:8000
+accounting.johnnytran.ca {
+    # Password protection — only you can access this
+    # To generate a new hash on the VPS: docker run --rm caddy:2-alpine caddy hash-password
+    # Then set BASIC_AUTH_HASH in your .env file
+    basicauth {
+        {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
     }
 
-    # Proxy all other requests to the frontend
-    handle {
-        reverse_proxy frontend:80
+    # Tell search engines: do not index, do not follow, do not cache
+    header {
+        X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        # Prevent the site from appearing in Google's results even if crawled
+        -Server
     }
+
+    # Block search engine bots at the server level
+    @bots {
+        header User-Agent *Googlebot*
+        header User-Agent *Bingbot*
+        header User-Agent *Slurp*
+        header User-Agent *DuckDuckBot*
+        header User-Agent *Baiduspider*
+        header User-Agent *YandexBot*
+        header User-Agent *facebookexternalhit*
+    }
+    respond @bots 403
 
     # Compress responses
     encode gzip
 
-    # Security headers
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options DENY
-        Referrer-Policy strict-origin-when-cross-origin
+    # Proxy API requests to backend
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Proxy everything else to frontend
+    handle {
+        reverse_proxy frontend:80
     }
 }
