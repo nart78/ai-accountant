@@ -1,0 +1,46 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# AI & ML
+anthropic==0.18.1
+openai==1.12.0
+pytesseract==0.3.10
+Pillow==10.2.0
+pdf2image==1.17.0
+
+# Data Processing
+python-dateutil==2.8.2
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# HTTP & APIs
+httpx==0.26.0
+requests==2.31.0
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.1
+
+# Background Tasks
+celery==5.3.6
+redis==5.0.1
+
+# Utilities
+python-magic==0.4.27
+PyPDF2==3.0.1
+
+# Testing
+pytest==8.0.0
+pytest-asyncio==0.23.4
+httpx==0.26.0
+
+# Canadian Tax & Accounting
+# (We'll integrate with Wave API and custom tax calculation modules)
