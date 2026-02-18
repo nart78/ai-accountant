@@ -1,0 +1,24 @@
+# Replace yourdomain.com with your actual domain
+# Caddy automatically gets and renews SSL from Let's Encrypt
+
+yourdomain.com {
+    # Proxy API requests to the backend
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Proxy all other requests to the frontend
+    handle {
+        reverse_proxy frontend:80
+    }
+
+    # Compress responses
+    encode gzip
+
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+}
