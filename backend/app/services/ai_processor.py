@@ -93,7 +93,7 @@ class AIDocumentProcessor:
                 "needs_review": True
             }
 
-    async def _call_ollama(self, messages: list, timeout: float = 180.0) -> str:
+    async def _call_ollama(self, messages: list, timeout: float = 600.0) -> str:
         """Make a chat request to the Ollama API."""
         payload = {
             "model": self.model,
