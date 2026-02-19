@@ -11,6 +11,7 @@ from app.db import get_db
 from app.models.customer import Customer
 from app.models.invoice import Invoice, InvoiceItem
 from app.services.pdf_generator import generate_invoice_pdf
+from app.services.journal_service import create_je_for_invoice_sent, create_je_for_invoice_paid
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -279,11 +280,19 @@ async def update_invoice_status(invoice_id: int, data: StatusUpdate, db: Session
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
+    old_status = invoice.status
     invoice.status = data.status
+
     if data.status == "paid" and not invoice.paid_date:
         invoice.paid_date = date.today()
     elif data.status != "paid":
         invoice.paid_date = None
+
+    # Auto-create journal entries on status transitions
+    if data.status == "sent" and old_status == "draft":
+        create_je_for_invoice_sent(db, invoice)
+    elif data.status == "paid" and old_status != "paid":
+        create_je_for_invoice_paid(db, invoice)
 
     db.commit()
     return {"message": f"Invoice marked as {data.status}"}

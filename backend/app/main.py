@@ -9,7 +9,7 @@ from app.api.deps import get_current_user
 import os
 
 # Import routers
-from app.api import auth, documents, transactions, reports, customers, invoices
+from app.api import auth, documents, transactions, reports, customers, invoices, accounts, journal_entries, bills, bank_accounts
 
 # Create FastAPI app
 app = FastAPI(
@@ -59,6 +59,10 @@ app.include_router(transactions.router, prefix="/api/transactions", tags=["Trans
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"], dependencies=[Depends(get_current_user)])
 app.include_router(customers.router, prefix="/api/customers", tags=["Customers"], dependencies=[Depends(get_current_user)])
 app.include_router(invoices.router, prefix="/api/invoices", tags=["Invoices"], dependencies=[Depends(get_current_user)])
+app.include_router(accounts.router, prefix="/api/accounts", tags=["Accounts"], dependencies=[Depends(get_current_user)])
+app.include_router(journal_entries.router, prefix="/api/journal-entries", tags=["Journal Entries"], dependencies=[Depends(get_current_user)])
+app.include_router(bills.router, prefix="/api/bills", tags=["Bills"], dependencies=[Depends(get_current_user)])
+app.include_router(bank_accounts.router, prefix="/api/bank-accounts", tags=["Bank Accounts"], dependencies=[Depends(get_current_user)])
 
 
 if __name__ == "__main__":

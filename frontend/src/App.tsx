@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileText, BarChart3, Receipt, LogOut, Menu, X } from 'lucide-react';
+import { LayoutDashboard, FileText, BarChart3, Receipt, LogOut, Menu, X, BookOpen, ListChecks, FileInput, Landmark } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Documents from './pages/Documents';
 import Invoices from './pages/Invoices';
 import InvoiceForm from './pages/InvoiceForm';
+import Bills from './pages/Bills';
+import BillForm from './pages/BillForm';
+import BankAccounts from './pages/BankAccounts';
+import Accounts from './pages/Accounts';
+import JournalEntries from './pages/JournalEntries';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
 
@@ -15,6 +20,10 @@ function Sidebar({ onLogout }: { onLogout: () => void }) {
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/documents', icon: FileText, label: 'Documents' },
     { to: '/invoices', icon: Receipt, label: 'Invoices' },
+    { to: '/bills', icon: FileInput, label: 'Bills' },
+    { to: '/bank-accounts', icon: Landmark, label: 'Banking' },
+    { to: '/accounts', icon: BookOpen, label: 'Chart of Accounts' },
+    { to: '/journal-entries', icon: ListChecks, label: 'Journal Entries' },
     { to: '/reports', icon: BarChart3, label: 'Reports' },
   ];
 
@@ -113,6 +122,12 @@ function AppLayout({ onLogout }: { onLogout: () => void }) {
               <Route path="/invoices" element={<Invoices />} />
               <Route path="/invoices/new" element={<InvoiceForm />} />
               <Route path="/invoices/:id/edit" element={<InvoiceForm />} />
+              <Route path="/bills" element={<Bills />} />
+              <Route path="/bills/new" element={<BillForm />} />
+              <Route path="/bills/:id/edit" element={<BillForm />} />
+              <Route path="/bank-accounts" element={<BankAccounts />} />
+              <Route path="/accounts" element={<Accounts />} />
+              <Route path="/journal-entries" element={<JournalEntries />} />
               <Route path="/reports" element={<Reports />} />
             </Routes>
           </div>

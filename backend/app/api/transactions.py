@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.db import get_db
 from app.models.transaction import Transaction
 from app.models.document import Document
+from app.services.journal_service import create_je_for_transaction, delete_je_for_transaction
 
 router = APIRouter()
 
@@ -57,6 +58,11 @@ async def create_transaction(
     )
 
     db.add(transaction)
+    db.flush()
+
+    # Auto-create journal entry
+    create_je_for_transaction(db, transaction)
+
     db.commit()
     db.refresh(transaction)
 
@@ -172,6 +178,10 @@ async def update_transaction(
     transaction.tax_rate = transaction_data.tax_rate
     transaction.payment_method = transaction_data.payment_method
 
+    # Recreate journal entry
+    delete_je_for_transaction(db, transaction.id)
+    create_je_for_transaction(db, transaction)
+
     db.commit()
 
     return {"message": "Transaction updated successfully"}
@@ -184,6 +194,9 @@ async def delete_transaction(transaction_id: int, db: Session = Depends(get_db))
 
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
+
+    # Delete linked journal entries first
+    delete_je_for_transaction(db, transaction.id)
 
     db.delete(transaction)
     db.commit()

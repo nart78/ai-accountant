@@ -31,6 +31,22 @@ def get_db() -> Session:
 
 
 def init_db():
-    """Initialize database tables."""
-    from app.models import Document, Transaction, Customer, Invoice, InvoiceItem
+    """Initialize database tables and seed default data."""
+    from app.models import (
+        Document, Transaction, Customer, Invoice, InvoiceItem,
+        Account, JournalEntry, JournalEntryLine,
+        Bill, BillItem, BillPayment,
+        BankAccount, BankTransaction,
+        GSTFilingPeriod,
+    )
     Base.metadata.create_all(bind=engine)
+
+    # Seed chart of accounts on first boot
+    from app.services.coa_seed import seed_chart_of_accounts
+    db = SessionLocal()
+    try:
+        created = seed_chart_of_accounts(db)
+        if created > 0:
+            print(f"  📊 Seeded {created} default accounts in Chart of Accounts")
+    finally:
+        db.close()
