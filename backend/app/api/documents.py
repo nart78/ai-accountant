@@ -5,9 +5,12 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Backgro
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
+import logging
 import os
+import re
 import uuid
 import shutil
+import magic
 
 from app.db import get_db
 from app.config import settings
@@ -15,11 +18,34 @@ from app.models.document import Document
 from app.services.ai_processor import AIDocumentProcessor
 from app.services.ocr import OCRService
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Initialize services
 ai_processor = AIDocumentProcessor()
 ocr_service = OCRService()
+
+# Allowed MIME types mapped to extensions
+ALLOWED_MIMES = {
+    "application/pdf": "pdf",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "text/csv": "csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+}
+
+VALID_STATUSES = {"pending", "processed", "error", "review_needed"}
+
+
+def _sanitize_filename(filename: str) -> str:
+    """Strip path components and dangerous characters from filename."""
+    # Take only the basename (prevent path traversal)
+    name = os.path.basename(filename)
+    # Allow only alphanumeric, dots, hyphens, underscores
+    name = re.sub(r"[^\w.\-]", "_", name)
+    # Prevent hidden files
+    name = name.lstrip(".")
+    return name or "document"
 
 
 @router.post("/upload")
@@ -48,24 +74,35 @@ async def upload_document(
     if file_size > settings.max_upload_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Max size: {settings.max_upload_size / 1024 / 1024}MB"
+            detail=f"File too large. Max size: {settings.max_upload_size / 1024 / 1024:.0f}MB"
         )
 
-    # Generate unique filename
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+    # Read file content and validate MIME type via magic bytes
+    file_content = await file.read()
+    detected_mime = magic.from_buffer(file_content, mime=True)
+    if detected_mime not in ALLOWED_MIMES:
+        raise HTTPException(
+            status_code=400,
+            detail="File content does not match an allowed type."
+        )
+
+    # Sanitize filename and generate unique path
+    safe_name = _sanitize_filename(file.filename)
+    unique_filename = f"{uuid.uuid4()}_{safe_name}"
     file_path = os.path.join(settings.upload_dir, unique_filename)
 
     # Save file
     try:
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(file_content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+        logger.error("Failed to save uploaded file: %s", e)
+        raise HTTPException(status_code=500, detail="File upload failed.")
 
     # Create database record
     document = Document(
         filename=unique_filename,
-        original_filename=file.filename,
+        original_filename=safe_name,
         file_path=file_path,
         file_type=file_ext,
         file_size=file_size,
@@ -121,7 +158,7 @@ async def process_document_ai(document_id: int, file_path: str, file_type: str, 
                     document.transaction_date = datetime.strptime(
                         data["transaction_date"], "%Y-%m-%d"
                     )
-                except:
+                except (ValueError, TypeError):
                     pass
 
             document.tax_amount = data.get("tax_amount")
@@ -133,11 +170,12 @@ async def process_document_ai(document_id: int, file_path: str, file_type: str, 
 
         else:
             document.processing_status = "error"
-            document.review_notes = f"Processing failed: {result.get('error')}"
+            document.review_notes = "Processing failed"
 
     except Exception as e:
+        logger.error("Document processing error for id=%d: %s", document_id, e)
         document.processing_status = "error"
-        document.review_notes = f"Error: {str(e)}"
+        document.review_notes = "Processing error"
 
     db.commit()
 
@@ -161,9 +199,11 @@ async def list_documents(
     query = db.query(Document)
 
     if status:
+        if status not in VALID_STATUSES:
+            raise HTTPException(status_code=400, detail="Invalid status filter")
         query = query.filter(Document.processing_status == status)
 
-    documents = query.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+    documents = query.order_by(Document.created_at.desc()).offset(skip).limit(min(limit, 100)).all()
 
     return {
         "total": query.count(),
@@ -252,7 +292,7 @@ async def delete_document(document_id: int, db: Session = Depends(get_db)):
         if os.path.exists(document.file_path):
             os.remove(document.file_path)
     except Exception as e:
-        print(f"Error deleting file: {e}")
+        logger.error("Error deleting file for document %d: %s", document_id, e)
 
     # Delete database record
     db.delete(document)

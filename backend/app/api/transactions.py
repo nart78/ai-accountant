@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.db import get_db
 from app.models.transaction import Transaction
@@ -17,15 +17,23 @@ router = APIRouter()
 class TransactionCreate(BaseModel):
     """Schema for creating a new transaction."""
     transaction_date: date
-    description: str
-    amount: float
-    category: str
-    subcategory: Optional[str] = None
-    counterparty_name: Optional[str] = None
-    tax_amount: Optional[float] = 0.0
-    tax_rate: Optional[float] = None
+    description: str = Field(..., min_length=1, max_length=500)
+    amount: float = Field(..., gt=-1_000_000_000, lt=1_000_000_000)
+    category: str = Field(..., min_length=1, max_length=100)
+    subcategory: Optional[str] = Field(None, max_length=100)
+    counterparty_name: Optional[str] = Field(None, max_length=200)
+    tax_amount: Optional[float] = Field(0.0, ge=0, lt=1_000_000_000)
+    tax_rate: Optional[float] = Field(None, ge=0, le=1)
     payment_method: Optional[str] = "cash"
     document_id: Optional[int] = None
+
+    @field_validator("payment_method")
+    @classmethod
+    def validate_payment_method(cls, v):
+        allowed = {"cash", "credit_card", "debit", "bank_transfer", "cheque", "other", None}
+        if v not in allowed:
+            raise ValueError(f"Invalid payment method. Allowed: {', '.join(str(a) for a in allowed if a)}")
+        return v
 
 
 @router.post("/")

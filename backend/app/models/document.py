@@ -3,9 +3,7 @@ Document model for storing uploaded financial documents.
 """
 from sqlalchemy import Column, Integer, String, DateTime, Float, Text, Boolean, JSON
 from sqlalchemy.sql import func
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from app.db import Base
 
 
 class Document(Base):

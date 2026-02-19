@@ -1,44 +1,38 @@
-version: '3.9'
-
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database (internal only)
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ai_accountant
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis (for background task queue)
+  # Redis (internal only)
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
 
-  # FastAPI Backend
+  # FastAPI Backend (internal only)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/ai_accountant
+      DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@db:5432/ai_accountant
       REDIS_URL: redis://redis:6379/0
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      AUTH_USERNAME: ${AUTH_USERNAME:-johnny}
+      AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:?AUTH_PASSWORD_HASH is required}
       DEBUG: "false"
       UPLOAD_DIR: /app/uploads
     volumes:
@@ -49,16 +43,25 @@ services:
       redis:
         condition: service_started
 
-  # React Frontend
+  # React Frontend (exposed to nginx-proxy via proxy network)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "3000:80"
+    environment:
+      VIRTUAL_HOST: accounting.johnnytran.ca
+      LETSENCRYPT_HOST: accounting.johnnytran.ca
+      LETSENCRYPT_EMAIL: me@johnnytran.ca
+    networks:
+      - default
+      - proxy
     depends_on:
       - backend
+
+networks:
+  proxy:
+    external: true
 
 volumes:
   postgres_data:

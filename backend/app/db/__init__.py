@@ -32,5 +32,5 @@ def get_db() -> Session:
 
 def init_db():
     """Initialize database tables."""
-    from app.models import Document, Transaction
+    from app.models import Document, Transaction, Customer, Invoice, InvoiceItem
     Base.metadata.create_all(bind=engine)

@@ -24,8 +24,7 @@ class Settings(BaseSettings):
     database_echo: bool = False
 
     # API Keys
-    anthropic_api_key: str = Field(..., env="ANTHROPIC_API_KEY")
-    openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
+    gemini_api_key: str = Field(..., env="GEMINI_API_KEY")
 
     # Accounting Integration
     wave_api_key: str = Field(default="", env="WAVE_API_KEY")
@@ -35,10 +34,12 @@ class Settings(BaseSettings):
     payroll_api_key: str = Field(default="", env="PAYROLL_API_KEY")
     payroll_company_id: str = Field(default="", env="PAYROLL_COMPANY_ID")
 
-    # Security
+    # Security & Auth
     secret_key: str = Field(..., env="SECRET_KEY")
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    auth_username: str = Field(default="johnny", env="AUTH_USERNAME")
+    auth_password_hash: str = Field(..., env="AUTH_PASSWORD_HASH")
 
     # File Upload
     upload_dir: str = "../uploads/documents"
@@ -61,7 +62,7 @@ class Settings(BaseSettings):
     notification_email: str = Field(default="", env="NOTIFICATION_EMAIL")
 
     # AI Settings
-    ai_model: str = "claude-sonnet-4-5-20250929"
+    ai_model: str = "gemini-2.0-flash"
     ai_temperature: float = 0.1
     ai_max_tokens: int = 4000
 

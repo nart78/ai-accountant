@@ -1,20 +1,21 @@
 """
-AI-powered document processing using Claude.
+AI-powered document processing using Google Gemini.
 This service extracts financial information from documents and categorizes them.
 """
 import json
-from typing import Dict, Any, Optional
-from anthropic import Anthropic
+import base64
+from typing import Dict, Any
 from datetime import datetime
+import google.generativeai as genai
 from app.config import settings
 
 
 class AIDocumentProcessor:
-    """Process financial documents using Claude AI."""
+    """Process financial documents using Google Gemini AI."""
 
     def __init__(self):
-        self.client = Anthropic(api_key=settings.anthropic_api_key)
-        self.model = settings.ai_model
+        genai.configure(api_key=settings.gemini_api_key)
+        self.model = genai.GenerativeModel(settings.ai_model)
 
         # Canadian expense categories for business
         self.expense_categories = [
@@ -59,27 +60,15 @@ class AIDocumentProcessor:
     ) -> Dict[str, Any]:
         """
         Process a financial document and extract structured data.
-
-        Args:
-            file_content: Raw file bytes
-            file_type: Type of file (pdf, png, jpg, etc.)
-            filename: Original filename
-
-        Returns:
-            Dictionary with extracted financial data
         """
-        # Prepare the prompt for Claude
         prompt = self._create_extraction_prompt()
 
         try:
-            # Process based on file type
             if file_type in ['png', 'jpg', 'jpeg', 'pdf']:
                 result = await self._process_with_vision(file_content, file_type, prompt)
             else:
-                # For text-based files, convert to text first
                 result = await self._process_text_document(file_content, prompt)
 
-            # Parse and validate the result
             extracted_data = self._parse_ai_response(result)
 
             return {
@@ -98,7 +87,7 @@ class AIDocumentProcessor:
             }
 
     def _create_extraction_prompt(self) -> str:
-        """Create the prompt for Claude to extract financial data."""
+        """Create the prompt for Gemini to extract financial data."""
         return f"""You are an expert Canadian accountant analyzing a financial document.
 Extract all relevant financial information and return it as structured JSON.
 
@@ -176,93 +165,67 @@ If you cannot determine a value, use null. Ensure all amounts are numeric (not s
         file_type: str,
         prompt: str
     ) -> str:
-        """Process image or PDF using Claude's vision capabilities."""
-        import base64
-
-        # Convert file to base64
-        base64_content = base64.b64encode(file_content).decode('utf-8')
-
-        # Determine media type
+        """Process image or PDF using Gemini's vision capabilities."""
         media_type_map = {
             'pdf': 'application/pdf',
             'png': 'image/png',
             'jpg': 'image/jpeg',
             'jpeg': 'image/jpeg'
         }
-        media_type = media_type_map.get(file_type, 'image/jpeg')
+        mime_type = media_type_map.get(file_type, 'image/jpeg')
 
-        # Call Claude with vision
-        message = self.client.messages.create(
-            model=self.model,
-            max_tokens=settings.ai_max_tokens,
-            temperature=settings.ai_temperature,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "document" if file_type == 'pdf' else "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": base64_content,
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt
-                        }
-                    ],
-                }
-            ],
+        file_part = {
+            "mime_type": mime_type,
+            "data": file_content
+        }
+
+        response = self.model.generate_content(
+            [prompt, file_part],
+            generation_config=genai.types.GenerationConfig(
+                temperature=settings.ai_temperature,
+                max_output_tokens=settings.ai_max_tokens,
+            ),
         )
 
-        return message.content[0].text
+        return response.text
 
     async def _process_text_document(
         self,
         file_content: bytes,
         prompt: str
     ) -> str:
-        """Process text-based document."""
+        """Process text-based document (CSV, XLSX)."""
         text_content = file_content.decode('utf-8')
 
-        message = self.client.messages.create(
-            model=self.model,
-            max_tokens=settings.ai_max_tokens,
-            temperature=settings.ai_temperature,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"{prompt}\n\nDocument content:\n{text_content}"
-                }
-            ],
+        response = self.model.generate_content(
+            f"{prompt}\n\nDocument content:\n{text_content}",
+            generation_config=genai.types.GenerationConfig(
+                temperature=settings.ai_temperature,
+                max_output_tokens=settings.ai_max_tokens,
+            ),
         )
 
-        return message.content[0].text
+        return response.text
 
     def _parse_ai_response(self, response: str) -> Dict[str, Any]:
-        """Parse and validate Claude's JSON response."""
+        """Parse and validate Gemini's JSON response."""
         try:
-            # Extract JSON from response (in case there's surrounding text)
             json_start = response.find('{')
             json_end = response.rfind('}') + 1
             json_str = response[json_start:json_end]
 
             data = json.loads(json_str)
 
-            # Validate required fields
             if 'amount' in data and data['amount']:
                 data['amount'] = float(data['amount'])
             if 'tax_amount' in data and data['tax_amount']:
                 data['tax_amount'] = float(data['tax_amount'])
             if 'confidence' not in data:
-                data['confidence'] = 0.8  # Default confidence
+                data['confidence'] = 0.8
 
             return data
 
-        except json.JSONDecodeError as e:
-            # If JSON parsing fails, return error with raw response
+        except json.JSONDecodeError:
             return {
                 "error": "Failed to parse AI response",
                 "raw_response": response,
@@ -275,10 +238,7 @@ If you cannot determine a value, use null. Ensure all amounts are numeric (not s
         amount: float,
         vendor: str
     ) -> Dict[str, str]:
-        """
-        Categorize a transaction based on description, amount, and vendor.
-        Useful for bank statement imports.
-        """
+        """Categorize a transaction based on description, amount, and vendor."""
         prompt = f"""As a Canadian accountant, categorize this business transaction:
 
 Vendor: {vendor}
@@ -299,12 +259,12 @@ Return JSON only:
 }}
 """
 
-        message = self.client.messages.create(
-            model=self.model,
-            max_tokens=1000,
-            temperature=0.1,
-            messages=[{"role": "user", "content": prompt}],
+        response = self.model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.1,
+                max_output_tokens=1000,
+            ),
         )
 
-        response = message.content[0].text
-        return self._parse_ai_response(response)
+        return self._parse_ai_response(response.text)
