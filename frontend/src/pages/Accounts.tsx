@@ -1160,7 +1160,6 @@ export default function Accounts() {
   // -----------------------------------------------------------------------
 
   const grouped = groupAccountsByType(accounts);
-  const nonEmptyTypes = ACCOUNT_TYPE_ORDER.filter((type) => grouped[type].length > 0);
   const hasAccounts = accounts.length > 0;
 
   // -----------------------------------------------------------------------
@@ -1209,7 +1208,7 @@ export default function Accounts() {
                   key={type}
                   className={`bg-white rounded-xl shadow-sm border border-slate-100 border-l-4 ${config.borderColor} p-4 hover:shadow-md transition-shadow cursor-pointer`}
                   onClick={() => {
-                    setExpandedSections((prev) => {
+                    setExpandedSections((_prev) => {
                       // Collapse all, expand target
                       const next: Record<AccountType, boolean> = {
                         asset: false,

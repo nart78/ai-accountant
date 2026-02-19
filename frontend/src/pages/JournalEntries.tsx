@@ -140,14 +140,6 @@ function formatDate(dateString: string): string {
   }
 }
 
-function toISODate(dateString: string): string {
-  try {
-    return new Date(dateString).toISOString().split('T')[0];
-  } catch {
-    return dateString;
-  }
-}
-
 function todayISO(): string {
   return new Date().toISOString().split('T')[0];
 }
@@ -889,7 +881,7 @@ export default function JournalEntries() {
   const loadAccounts = useCallback(async () => {
     if (accountsLoaded) return;
     try {
-      const result = await accountAPI.list({ limit: 1000 });
+      const result = await accountAPI.list({ active_only: false });
       setAccounts(result.accounts ?? []);
       setAccountsLoaded(true);
     } catch {
