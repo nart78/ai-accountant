@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     database_url: str = Field(..., env="DATABASE_URL")
     database_echo: bool = False
 
-    # API Keys
-    gemini_api_key: str = Field(..., env="GEMINI_API_KEY")
+    # Ollama
+    ollama_base_url: str = Field(default="http://localhost:11434", env="OLLAMA_BASE_URL")
 
     # Accounting Integration
     wave_api_key: str = Field(default="", env="WAVE_API_KEY")
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     notification_email: str = Field(default="", env="NOTIFICATION_EMAIL")
 
     # AI Settings
-    ai_model: str = "gemini-2.0-flash"
+    ai_model: str = "llama3.2-vision:11b"
     ai_temperature: float = 0.1
     ai_max_tokens: int = 4000
 

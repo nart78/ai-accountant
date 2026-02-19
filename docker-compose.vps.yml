@@ -26,10 +26,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@db:5432/ai_accountant
       REDIS_URL: redis://redis:6379/0
-      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       AUTH_USERNAME: ${AUTH_USERNAME:-johnny}
       AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:?AUTH_PASSWORD_HASH is required}

@@ -1,21 +1,25 @@
 """
-AI-powered document processing using Google Gemini.
+AI-powered document processing using Ollama (Llama 3.2 Vision).
 This service extracts financial information from documents and categorizes them.
 """
 import json
 import base64
+import io
+import logging
 from typing import Dict, Any
-from datetime import datetime
-import google.generativeai as genai
+import httpx
+from pdf2image import convert_from_bytes
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class AIDocumentProcessor:
-    """Process financial documents using Google Gemini AI."""
+    """Process financial documents using Ollama + Llama 3.2 Vision."""
 
     def __init__(self):
-        genai.configure(api_key=settings.gemini_api_key)
-        self.model = genai.GenerativeModel(settings.ai_model)
+        self.base_url = settings.ollama_base_url
+        self.model = settings.ai_model
 
         # Canadian expense categories for business
         self.expense_categories = [
@@ -64,8 +68,10 @@ class AIDocumentProcessor:
         prompt = self._create_extraction_prompt()
 
         try:
-            if file_type in ['png', 'jpg', 'jpeg', 'pdf']:
+            if file_type in ['png', 'jpg', 'jpeg']:
                 result = await self._process_with_vision(file_content, file_type, prompt)
+            elif file_type == 'pdf':
+                result = await self._process_pdf_with_vision(file_content, prompt)
             else:
                 result = await self._process_text_document(file_content, prompt)
 
@@ -79,6 +85,7 @@ class AIDocumentProcessor:
             }
 
         except Exception as e:
+            logger.error("AI processing error: %s", e)
             return {
                 "success": False,
                 "error": str(e),
@@ -86,8 +93,122 @@ class AIDocumentProcessor:
                 "needs_review": True
             }
 
+    async def _call_ollama(self, messages: list, timeout: float = 180.0) -> str:
+        """Make a chat request to the Ollama API."""
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": settings.ai_temperature,
+                "num_predict": settings.ai_max_tokens,
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{self.base_url}/api/chat",
+                json=payload
+            )
+            response.raise_for_status()
+            return response.json()["message"]["content"]
+
+    async def _process_with_vision(
+        self,
+        file_content: bytes,
+        file_type: str,
+        prompt: str
+    ) -> str:
+        """Process image using Ollama vision capabilities."""
+        image_b64 = base64.b64encode(file_content).decode("utf-8")
+
+        messages = [
+            {
+                "role": "user",
+                "content": prompt,
+                "images": [image_b64]
+            }
+        ]
+
+        return await self._call_ollama(messages)
+
+    async def _process_pdf_with_vision(
+        self,
+        file_content: bytes,
+        prompt: str
+    ) -> str:
+        """Process PDF by converting pages to images for vision model."""
+        images = convert_from_bytes(file_content, dpi=200)
+        # Limit to first 3 pages to keep inference time reasonable on CPU
+        images = images[:3]
+
+        if len(images) == 1:
+            # Single page — process directly
+            buf = io.BytesIO()
+            images[0].save(buf, format="PNG")
+            image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_b64]
+                }
+            ]
+            return await self._call_ollama(messages)
+
+        # Multi-page — process each page, then consolidate
+        page_results = []
+        for i, page_image in enumerate(images):
+            buf = io.BytesIO()
+            page_image.save(buf, format="PNG")
+            image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+            page_prompt = f"[Page {i+1} of {len(images)}]\n\n{prompt}"
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": page_prompt,
+                    "images": [image_b64]
+                }
+            ]
+            result = await self._call_ollama(messages)
+            page_results.append(result)
+
+        # Consolidate multi-page results
+        combined = "\n\n---\n\n".join(
+            f"Page {i+1} extraction:\n{r}" for i, r in enumerate(page_results)
+        )
+        merge_prompt = (
+            "Below are AI extractions from each page of a multi-page document. "
+            "Merge them into a single JSON result following the same schema. "
+            "Use the most complete and confident values. Return ONLY valid JSON.\n\n"
+            + combined
+        )
+
+        messages = [{"role": "user", "content": merge_prompt}]
+        return await self._call_ollama(messages)
+
+    async def _process_text_document(
+        self,
+        file_content: bytes,
+        prompt: str
+    ) -> str:
+        """Process text-based document (CSV, XLSX)."""
+        text_content = file_content.decode('utf-8')
+
+        messages = [
+            {
+                "role": "user",
+                "content": f"{prompt}\n\nDocument content:\n{text_content}"
+            }
+        ]
+
+        return await self._call_ollama(messages)
+
     def _create_extraction_prompt(self) -> str:
-        """Create the prompt for Gemini to extract financial data."""
+        """Create the prompt for the model to extract financial data."""
         return f"""You are an expert Canadian accountant analyzing a financial document.
 Extract all relevant financial information and return it as structured JSON.
 
@@ -159,56 +280,8 @@ Return ONLY valid JSON in this exact format:
 If you cannot determine a value, use null. Ensure all amounts are numeric (not strings).
 """
 
-    async def _process_with_vision(
-        self,
-        file_content: bytes,
-        file_type: str,
-        prompt: str
-    ) -> str:
-        """Process image or PDF using Gemini's vision capabilities."""
-        media_type_map = {
-            'pdf': 'application/pdf',
-            'png': 'image/png',
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg'
-        }
-        mime_type = media_type_map.get(file_type, 'image/jpeg')
-
-        file_part = {
-            "mime_type": mime_type,
-            "data": file_content
-        }
-
-        response = self.model.generate_content(
-            [prompt, file_part],
-            generation_config=genai.types.GenerationConfig(
-                temperature=settings.ai_temperature,
-                max_output_tokens=settings.ai_max_tokens,
-            ),
-        )
-
-        return response.text
-
-    async def _process_text_document(
-        self,
-        file_content: bytes,
-        prompt: str
-    ) -> str:
-        """Process text-based document (CSV, XLSX)."""
-        text_content = file_content.decode('utf-8')
-
-        response = self.model.generate_content(
-            f"{prompt}\n\nDocument content:\n{text_content}",
-            generation_config=genai.types.GenerationConfig(
-                temperature=settings.ai_temperature,
-                max_output_tokens=settings.ai_max_tokens,
-            ),
-        )
-
-        return response.text
-
     def _parse_ai_response(self, response: str) -> Dict[str, Any]:
-        """Parse and validate Gemini's JSON response."""
+        """Parse and validate the model's JSON response."""
         try:
             json_start = response.find('{')
             json_end = response.rfind('}') + 1
@@ -259,12 +332,6 @@ Return JSON only:
 }}
 """
 
-        response = self.model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.1,
-                max_output_tokens=1000,
-            ),
-        )
-
-        return self._parse_ai_response(response.text)
+        messages = [{"role": "user", "content": prompt}]
+        response = await self._call_ollama(messages, timeout=60.0)
+        return self._parse_ai_response(response)
