@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     notification_email: str = Field(default="", env="NOTIFICATION_EMAIL")
 
     # AI Settings
-    ai_model: str = "llama3.2-vision:11b"
+    ai_model: str = "llama3.2:3b"
     ai_temperature: float = 0.1
     ai_max_tokens: int = 4000
 

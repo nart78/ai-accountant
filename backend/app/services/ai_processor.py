@@ -1,25 +1,25 @@
 """
-AI-powered document processing using Ollama (Llama 3.2 Vision).
-This service extracts financial information from documents and categorizes them.
+AI-powered document processing using OCR + Ollama (Llama 3.2).
+Extracts text from documents via Tesseract OCR, then uses a text LLM
+to parse and categorize the financial information.
 """
 import json
-import base64
-import io
 import logging
 from typing import Dict, Any
 import httpx
-from pdf2image import convert_from_bytes
 from app.config import settings
+from app.services.ocr import OCRService
 
 logger = logging.getLogger(__name__)
 
 
 class AIDocumentProcessor:
-    """Process financial documents using Ollama + Llama 3.2 Vision."""
+    """Process financial documents using OCR + Ollama text model."""
 
     def __init__(self):
         self.base_url = settings.ollama_base_url
         self.model = settings.ai_model
+        self.ocr = OCRService()
 
         # Canadian expense categories for business
         self.expense_categories = [
@@ -65,15 +65,30 @@ class AIDocumentProcessor:
         """
         Process a financial document and extract structured data.
         """
-        prompt = self._create_extraction_prompt()
-
         try:
+            # Step 1: Extract text via OCR (images/PDFs) or decode (text files)
             if file_type in ['png', 'jpg', 'jpeg']:
-                result = await self._process_with_vision(file_content, file_type, prompt)
+                extracted_text = self._ocr_image(file_content)
             elif file_type == 'pdf':
-                result = await self._process_pdf_with_vision(file_content, prompt)
+                extracted_text = self._ocr_pdf(file_content)
             else:
-                result = await self._process_text_document(file_content, prompt)
+                extracted_text = file_content.decode('utf-8')
+
+            if not extracted_text or not extracted_text.strip():
+                return {
+                    "success": False,
+                    "error": "OCR could not extract any text from the document",
+                    "data": None,
+                    "needs_review": True
+                }
+
+            logger.info(
+                "OCR extracted %d chars from %s", len(extracted_text), filename
+            )
+
+            # Step 2: Send extracted text to LLM for structured parsing
+            prompt = self._create_extraction_prompt()
+            result = await self._process_text_document(extracted_text, prompt)
 
             extracted_data = self._parse_ai_response(result)
 
@@ -85,13 +100,23 @@ class AIDocumentProcessor:
             }
 
         except Exception as e:
-            logger.error("AI processing error: %s", e)
+            logger.error("AI processing error for %s: %s", filename, e)
             return {
                 "success": False,
                 "error": str(e),
                 "data": None,
                 "needs_review": True
             }
+
+    def _ocr_image(self, file_content: bytes) -> str:
+        """Extract text from an image using Tesseract OCR."""
+        # Preprocess for better accuracy, then OCR
+        processed = self.ocr.preprocess_image(file_content)
+        return self.ocr.extract_text_from_image(processed)
+
+    def _ocr_pdf(self, file_content: bytes) -> str:
+        """Extract text from a PDF by converting pages to images and OCR."""
+        return self.ocr.extract_text_from_pdf(file_content, max_pages=5)
 
     async def _call_ollama(self, messages: list, timeout: float = 600.0) -> str:
         """Make a chat request to the Ollama API."""
@@ -113,91 +138,12 @@ class AIDocumentProcessor:
         response.raise_for_status()
         return response.json()["message"]["content"]
 
-    async def _process_with_vision(
-        self,
-        file_content: bytes,
-        file_type: str,
-        prompt: str
-    ) -> str:
-        """Process image using Ollama vision capabilities."""
-        image_b64 = base64.b64encode(file_content).decode("utf-8")
-
-        messages = [
-            {
-                "role": "user",
-                "content": prompt,
-                "images": [image_b64]
-            }
-        ]
-
-        return await self._call_ollama(messages)
-
-    async def _process_pdf_with_vision(
-        self,
-        file_content: bytes,
-        prompt: str
-    ) -> str:
-        """Process PDF by converting pages to images for vision model."""
-        images = convert_from_bytes(file_content, dpi=200)
-        # Limit to first 3 pages to keep inference time reasonable on CPU
-        images = images[:3]
-
-        if len(images) == 1:
-            # Single page — process directly
-            buf = io.BytesIO()
-            images[0].save(buf, format="PNG")
-            image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-            messages = [
-                {
-                    "role": "user",
-                    "content": prompt,
-                    "images": [image_b64]
-                }
-            ]
-            return await self._call_ollama(messages)
-
-        # Multi-page — process each page, then consolidate
-        page_results = []
-        for i, page_image in enumerate(images):
-            buf = io.BytesIO()
-            page_image.save(buf, format="PNG")
-            image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-            page_prompt = f"[Page {i+1} of {len(images)}]\n\n{prompt}"
-
-            messages = [
-                {
-                    "role": "user",
-                    "content": page_prompt,
-                    "images": [image_b64]
-                }
-            ]
-            result = await self._call_ollama(messages)
-            page_results.append(result)
-
-        # Consolidate multi-page results
-        combined = "\n\n---\n\n".join(
-            f"Page {i+1} extraction:\n{r}" for i, r in enumerate(page_results)
-        )
-        merge_prompt = (
-            "Below are AI extractions from each page of a multi-page document. "
-            "Merge them into a single JSON result following the same schema. "
-            "Use the most complete and confident values. Return ONLY valid JSON.\n\n"
-            + combined
-        )
-
-        messages = [{"role": "user", "content": merge_prompt}]
-        return await self._call_ollama(messages)
-
     async def _process_text_document(
         self,
-        file_content: bytes,
+        text_content: str,
         prompt: str
     ) -> str:
-        """Process text-based document (CSV, XLSX)."""
-        text_content = file_content.decode('utf-8')
-
+        """Send extracted text to Ollama for structured parsing."""
         messages = [
             {
                 "role": "user",
