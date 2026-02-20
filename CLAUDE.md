@@ -23,6 +23,9 @@
 - Docker dev: `docker-compose up --build`
 - Tests: `pytest` (test suite needs to be created)
 
+## Rules
+- Always run tests before pushing. Never push without confirming tests pass first.
+
 ## Conventions
 - Double-entry bookkeeping: every transaction must have balanced debits and credits
 - Canadian tax compliance: GST/HST tracking, T2125 mapping, CRA-aligned categories
