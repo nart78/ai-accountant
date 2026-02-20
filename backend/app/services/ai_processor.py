@@ -105,13 +105,13 @@ class AIDocumentProcessor:
             }
         }
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/api/chat",
-                json=payload
-            )
-            response.raise_for_status()
-            return response.json()["message"]["content"]
+        response = httpx.post(
+            f"{self.base_url}/api/chat",
+            json=payload,
+            timeout=httpx.Timeout(timeout)
+        )
+        response.raise_for_status()
+        return response.json()["message"]["content"]
 
     async def _process_with_vision(
         self,
